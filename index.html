@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPT-X Test</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden; /* blokuje przewijanie */
+  }
+  body {
+    font-family: sans-serif;
+    background-color: #111;
+    color: #fff;
+    text-align: center;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  #letter {
+    font-size: 8rem;
+    font-weight: bold;
+  }
+  #copyButton {
+    background: #4caf50;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    font-size: 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #copyButton:hover { background: #45a049; }
+</style>
+</head>
+<body>
+<div id="content">
+  <h1>Test CPT-X</h1>
+  <p>
+    Na ekranie będą pojawiać się litery.<br>
+    <b>Jeśli wyświetlona litera to NIE jest X</b> – naciśnij <b>spację</b> lub dotknij ekranu.<br>
+    <b>Jeśli wyświetlona litera to X</b> – <b>nie rób nic</b>.<br><br>
+    Każda litera widoczna jest przez 1 s, potem następuje 1 s przerwy.<br>
+    Naciśnij <b>spację</b> lub dotknij ekranu, aby rozpocząć.
+  </p>
+</div>
+
+<script>
+const totalStimuli = 105;
+const totalX = 15;
+const displayTime = 1000;
+const blankTime = 1000;
+
+let letters = [];
+let current = 0;
+let showing = false;
+let reactionStart = 0;
+let score = {hits:0, misses:0, falseAlarms:0, correctRejections:0};
+let reactionTimes = [];
+
+// Blokada przewijania spacją
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') e.preventDefault();
+});
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function generateSequence() {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  letters = [];
+  for (let i = 0; i < totalX; i++) letters.push('X');
+  while (letters.length < totalStimuli) {
+    const nonX = alphabet[Math.floor(Math.random() * alphabet.length)];
+    if (nonX !== 'X') letters.push(nonX);
+  }
+  return shuffle(letters);
+}
+
+function startTest() {
+  const div = document.getElementById('content');
+  div.innerHTML = "<h2>Przygotuj się...</h2>";
+  setTimeout(() => {
+    generateSequence();
+    current = 0;
+    score = {hits:0, misses:0, falseAlarms:0, correctRejections:0};
+    reactionTimes = [];
+    showNext();
+  }, 1000);
+}
+
+function showNext() {
+  const div = document.getElementById('content');
+  if (current >= letters.length) { endTest(); return; }
+
+  const currentLetter = letters[current];
+  div.innerHTML = `<div id="letter">${currentLetter}</div>`;
+  showing = true;
+  let responded = false;
+  reactionStart = performance.now();
+
+  const handleResponse = () => {
+    if (!showing || responded) return;
+    responded = true;
+    const rt = performance.now() - reactionStart;
+    if (currentLetter !== 'X') {
+      score.hits++;
+      reactionTimes.push(rt);
+    } else {
+      score.falseAlarms++;
+    }
+  };
+
+  const keyHandler = (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      handleResponse();
+    }
+  };
+
+  window.addEventListener('keydown', keyHandler);
+  window.addEventListener('touchstart', handleResponse);
+
+  setTimeout(() => {
+    showing = false;
+    window.removeEventListener('keydown', keyHandler);
+    window.removeEventListener('touchstart', handleResponse);
+    if (!responded) {
+      if (currentLetter === 'X') score.correctRejections++;
+      else score.misses++;
+    }
+    div.innerHTML = "";
+    current++;
+    setTimeout(showNext, blankTime);
+  }, displayTime);
+}
+
+function endTest() {
+  const div = document.getElementById('content');
+  const totalNonX = totalStimuli - totalX;
+  const meanRT = reactionTimes.length ? 
+      (reactionTimes.reduce((a,b)=>a+b)/reactionTimes.length).toFixed(0) : 0;
+  const sdRT = reactionTimes.length ?
+      (Math.sqrt(reactionTimes.map(rt=>Math.pow(rt-meanRT,2))
+      .reduce((a,b)=>a+b)/reactionTimes.length)).toFixed(0) : 0;
+
+  const hitRate = ((score.hits / totalNonX) * 100).toFixed(1);
+  const omissionRate = ((score.misses / totalNonX) * 100).toFixed(1);
+  const commissionRate = ((score.falseAlarms / totalX) * 100).toFixed(1);
+
+  const resultText = 
+`Wyniki:
+Poprawne reakcje (HIT): ${score.hits}
+Błędy pominięcia (OMISSION): ${score.misses}
+Błędy fałszywego alarmu (COMMISSION): ${score.falseAlarms}
+Poprawne zahamowania (CORRECT REJECTION): ${score.correctRejections}
+Hit rate: ${hitRate}%
+Omission rate: ${omissionRate}%
+Commission rate: ${commissionRate}%
+Średni czas reakcji (RT): ${meanRT} ms
+Odchylenie SD RT: ${sdRT} ms`;
+
+  div.innerHTML = `<h1>Koniec testu</h1><pre>${resultText}</pre>
+                   <button id="copyButton">KOPIUJ WYNIK</button>
+                   <p>Skopiuj wynik i wklej go w formularzu Google Forms.</p>`;
+  document.getElementById('copyButton').onclick = () => {
+    navigator.clipboard.writeText(resultText);
+    alert("Wynik skopiowany do schowka!");
+  };
+}
+
+// ⏯ Start działa zawsze: dowolna spacja lub dotyk
+function enableStart() {
+  const startOnce = (e) => {
+    if (e.type === 'keydown' && e.code !== 'Space') return;
+    e.preventDefault();
+    window.removeEventListener('keydown', startOnce);
+    window.removeEventListener('touchstart', startOnce);
+    startTest();
+  };
+  window.addEventListener('keydown', startOnce);
+  window.addEventListener('touchstart', startOnce);
+}
+enableStart();
+</script>
+</body>
+</html>
